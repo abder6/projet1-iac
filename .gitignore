@@ -1,0 +1,31 @@
+# Fichier: .gitignore
+
+# Répertoires locaux de Terraform et OpenTofu
+.terraform/
+.tofu/
+
+# Fichiers d'état locaux et sauvegardes
+*.tfstate
+*.tfstate.*
+
+# Fichiers de plan Terraform/OpenTofu sauvegardés localement
+*.tfplan
+
+# Fichiers .tfvars contenant des secrets (si vous en aviez)
+# secrets.tfvars
+# *.secret.tfvars
+
+# Logs de crash
+crash.log
+crash.*.log
+
+# Fichiers de surcharge locaux
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Fichiers spécifiques à l'IDE ou au système d'exploitation
+.DS_Store
+.idea/
+*.swp
