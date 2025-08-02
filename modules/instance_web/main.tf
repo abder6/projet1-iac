@@ -2,7 +2,7 @@
 resource "aws_security_group" "web_sg" {
   name        = "web-sg-projet2-nginx"
   description = "Allow HTTP inbound traffic for Projet1 NGINX WebServer"
-  vpc_id = var.vpc_id
+  vpc_id      = var.vpc_id
 
   ingress {
     description      = "HTTP from anywhere"
@@ -10,7 +10,7 @@ resource "aws_security_group" "web_sg" {
     to_port          = 80
     protocol         = "tcp"
     cidr_blocks      = ["0.0.0.0/0"] # Autorise le trafic HTTP depuis n'importe quelle IP
-    ipv6_cidr_blocks = ["::/0"]     # Autorise le trafic HTTP depuis n'importe quelle IP (IPv6)
+    ipv6_cidr_blocks = ["::/0"]      # Autorise le trafic HTTP depuis n'importe quelle IP (IPv6)
   }
 
   egress {
@@ -23,9 +23,9 @@ resource "aws_security_group" "web_sg" {
   }
 
   tags = {
-    Name      = "WebServer-NGINX-SG-Projet1"
-    Project   = var.project_name
-    ManagedBy = "Terraform"
+    Name          = "WebServer-NGINX-SG-Projet1"
+    Project       = var.project_name
+    ManagedBy     = "Terraform"
     environnement = var.environment_tag
   }
   lifecycle {
@@ -35,9 +35,9 @@ resource "aws_security_group" "web_sg" {
 
 resource "aws_instance" "web_server" {
   # Exemple pour Amazon Linux 2023 (à vérifier/remplacer) : recherchez la dernière AL2023
-  ami           = var.ami_id // definis l'image de l'instance
-  instance_type = var.instance_type # Type d'instance éligible au niveau gratuit (vérifiez les conditions)
-  associate_public_ip_address = true // adresse IP de l'ec2
+  ami                         = var.ami_id        // definis l'image de l'instance
+  instance_type               = var.instance_type # Type d'instance éligible au niveau gratuit (vérifiez les conditions)
+  associate_public_ip_address = true              // adresse IP de l'ec2
   # Configuration des métadonnées pour IMDSv2 (recommandé)
   metadata_options {
     http_tokens   = "required" # Force l'utilisation de tokens pour IMDSv2

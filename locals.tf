@@ -19,8 +19,8 @@ locals {
 
   # Tags communs à toutes les ressources, avec l'environnement dynamiquement ajouté
   common_tags = {
-    ManagedBy   = "Terraform"       // ou "OpenTofu"
-    Project     = var.project_name  // Utilise la variable globale du projet
+    ManagedBy   = "Terraform"         // ou "OpenTofu"
+    Project     = var.project_name    // Utilise la variable globale du projet
     Environment = terraform.workspace // Ajoute dynamiquement le nom du workspace
   }
 
