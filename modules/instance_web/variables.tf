@@ -12,7 +12,7 @@ variable "ami_id" {
 variable "project_name" {
   description = "Nom du projet, utilisé pour le taggage des ressources."
   type        = string
-  
+
 }
 variable "environment_tag" {
   description = "Tag d'environnement (ex: Development, Staging, Production)."
@@ -31,7 +31,7 @@ variable "vpc_id" {
 }
 
 variable "secret_tag_value_sm" {
-description = "Valeur secrete de SM pour un tag de démonstration"
-type = string
-sensitive = true
+  description = "Valeur secrete de SM pour un tag de démonstration"
+  type        = string
+  sensitive   = true
 }

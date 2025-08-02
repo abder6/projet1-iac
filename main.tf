@@ -1,7 +1,8 @@
 terraform {
+  required_version = ">= 1.5.0"
   required_providers {
     aws = {
-      source = "hashicorp/aws"
+      source  = "hashicorp/aws"
       version = "6.6.0"
     }
   }
@@ -10,7 +11,6 @@ terraform {
 provider "aws" {
   # Configuration options
   region = var.aws_region
-  profile = "projet1-sso"
 }
 
 data "aws_ami" "amazon_linux_2023" {
@@ -54,24 +54,24 @@ module "vpc" {
   private_subnets = ["10.0.1.0/24", "10.0.2.0/24", "10.0.3.0/24"]                      # Exemple de CIDRs pour sous-réseaux privés, 3 au cas ou 1 tombe 
   public_subnets  = ["10.0.101.0/24", "10.0.102.0/24", "10.0.103.0/24"]                # Exemple de CIDRs pour sous-réseaux publics
 
-  enable_nat_gateway = terraform.workspace == "prod" ?  true : false # Crée une NAT Gateway pour les sous-réseaux privés (peut engendrer des coûts)
-  single_nat_gateway = true # Utilise une seule NAT Gateway pour toutes les AZs (réduit les coûts)
+  enable_nat_gateway = terraform.workspace == "prod" ? true : false # Crée une NAT Gateway pour les sous-réseaux privés (peut engendrer des coûts)
+  single_nat_gateway = true                                         # Utilise une seule NAT Gateway pour toutes les AZs (réduit les coûts)
 
   enable_dns_hostnames = true
-  enable_dns_support   = true 
+  enable_dns_support   = true
 
   tags = local.common_tags
 }
 
 // Lancement du module
 module "web_server_1" {
-  source = "./modules/instance_web"
-  ami_id = data.aws_ami.amazon_linux_2023.id
-  environment_tag = terraform.workspace
-  instance_type = local.current_instance_config.instance_type
-  project_name = var.project_name
-  subnet_id = module.vpc.public_subnets[0]
-  vpc_id = module.vpc.vpc_id
+  source              = "./modules/instance_web"
+  ami_id              = data.aws_ami.amazon_linux_2023.id
+  environment_tag     = terraform.workspace
+  instance_type       = local.current_instance_config.instance_type
+  project_name        = var.project_name
+  subnet_id           = module.vpc.public_subnets[0]
+  vpc_id              = module.vpc.vpc_id
   secret_tag_value_sm = jsondecode(data.aws_secretsmanager_secret_version.app_api_key_secret.secret_string)["my_app_api_key"]
 }
 
