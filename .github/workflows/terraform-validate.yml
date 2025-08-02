@@ -74,6 +74,11 @@ jobs:
     needs: validate-code # s’exécute seulement si le job validate-code a réussi
     if: github.event_name == 'pull_request'
 
+    outputs : #rendre le nom du fichier de plan binaire et le nom du workspace dispo
+      plan_binary_filename: ${{ steps.plan.outputs.PLAN_BINARY_FILENAME }}
+      tf_workspace: ${{ steps.set_workspace.outputs.tf_workspace }}
+
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -90,6 +95,7 @@ jobs:
           terraform_version: "1.12.1" # spécifiez la version de Terraform à utiliser
 
       - name: Determine Terraform workspace
+        id: set_workspace
         run: |
           if [ "${{ github.base_ref }}" = "main" ]; then
             WORKSPACE=prod
@@ -113,6 +119,10 @@ jobs:
       - name: Terraform Plan
         id: plan
         run: |
+          PLAN_BINARY_FILENAME="tfplan-${WORKSPACE}.binary"
+          PLAN_TEXT_FILENAME="tfplan-${WORKSPACE}.txt"
+          echo "PLAN_BINARY_FILENAME=${PLAN_BINARY_FILENAME}" >> $GITHUB_OUTPUT #Exporte le nom du fichier binaire
+
           echo "--- Running Terraform Plan ---"
           # Le code ci-dessous pourra être largement simplifié une fois que la PR #36476 de Terraform sera intégrée.
           # cf. https://github.com/hashicorp/terraform/issues/36476
@@ -168,18 +178,21 @@ jobs:
         with:
           issue-number: ${{ github.event.pull_request.number }}
           body: |
-            ### 📝 Résultat du `terraform plan` pour le workspace `$WORKSPACE`
+            ### 📝 Résultat du `terraform plan` pour le workspace `${{ steps.set_workspace.outputs.tf_workspace }}`
 
             ${{ steps.plan.outputs.PLAN_DETAILS }}
 
-            Le plan complet est disponible en tant qu’artefact attaché à ce workflow.
+            le plan complet (`${{ steps.plan.outputs.plan_binary_filename }}.txt`) et le plan binaire (`${{ steps.plan.outputs.plan_binary_filename }}`) sont disponibles en tant qu’artéfacts.
 
             **Veuillez examiner attentivement le plan avant d’approuver cette PR.**
 
-      - name: Upload Terraform plan artifact
-        if: success() || failure()
+      - name: Upload Terraform Plan Artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: terraform-plan-$WORKSPACE
-          path: plan.txt
-          retention-days: 7 # conserve l’artefact pendant 7 jours
+          name: terraform-plan-${{ steps.set_workspace.outputs.tf_workspace }}
+          path: |
+            tfplan-${{ steps.set_workspace.outputs.tf_workspace }}.binary
+            tfplan-${{ steps.set_workspace.outputs.tf_workspace }}.txt
+          retention-days: 7
+          if-no-files-found: ignore
