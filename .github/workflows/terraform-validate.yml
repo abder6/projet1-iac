@@ -269,5 +269,5 @@ jobs:
             echo "url de l’application (production) : non-disponible"
           else
             echo "app_url=http://${APP_IP}" >> $GITHUB_OUTPUT
-            echo "url de l’application (production) : http://${APP_IP}"
+            echo "url de l’applications (production) : http://${APP_IP}"
           fi          
