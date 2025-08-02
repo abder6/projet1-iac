@@ -10,8 +10,7 @@ terraform {
 
 provider "aws" {
   # Configuration options
-  region  = var.aws_region
-  profile = "projet1-sso"
+  region = var.aws_region
 }
 
 data "aws_ami" "amazon_linux_2023" {
