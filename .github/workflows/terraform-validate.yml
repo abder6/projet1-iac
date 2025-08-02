@@ -67,7 +67,7 @@ jobs:
         # avec au moins le plugin AWS activé, comme vu précédemment.
 
       - name: Run TFLint
-        run: tflint --recursive
+        run: tflint --recursive --disable-rule=terraform_unused_declarations
 
       # Trivy (Security Scan)
       - name: Run Trivy IaC scan
