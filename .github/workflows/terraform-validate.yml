@@ -57,7 +57,7 @@ jobs:
           exit-code: "0" # ne pas échouer le job si des vulnérabilités sont trouvées
           severity: "CRITICAL"
           ignore-unfixed: true
-
+ #Job 2 -> Terraform Plan
   terraform_plan:
     name: Generate Terraform Plan
     runs-on: ubuntu-latest
@@ -161,3 +161,113 @@ jobs:
             tfplan-${{ steps.set_workspace.outputs.tf_workspace }}.txt
           retention-days: 7
           if-no-files-found: ignore
+
+   #Job 3 -> Terraform Apply       
+  terraform_apply_staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: [validate-code] # dépend de la validation. le plan est régénéré.
+    if: ${{ github.ref == 'refs/heads/staging' && github.event_name == 'push' }}
+    environment:
+      name: staging
+      url: ${{ steps.get_app_url_staging.outputs.app_url }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::148867357643:role/GitHubActions-Terraform-Role-Projet1 # !! remplacez par l’ARN de votre rôle !!
+          aws-region: eu-west-3
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.12.1" # spécifiez la version de `Terraform` à utiliser
+      - name: Terraform Init
+        run: terraform init -input=false
+      - name: Select Staging Workspace
+        run: terraform workspace select dev || terraform workspace new dev
+      - name: Terraform Plan for Staging
+        id: plan_staging
+        run: |
+          terraform plan -input=false -no-color -out=tfplan-staging.binary
+          terraform show -no-color tfplan-staging.binary > tfplan-staging.txt
+          if grep -q "resources to be destroyed" tfplan-staging.txt; then
+            echo "::warning title=changements destructeurs détectés::le plan pour staging contient des destructions. vérification manuelle recommandée."
+          fi
+          echo "plan_file=tfplan-staging.binary" >> $GITHUB_OUTPUT
+      - name: Terraform Apply to Staging
+        run: terraform apply -input=false ${{ steps.plan_staging.outputs.plan_file }}
+      - name: récupérer l’IP et formater la sortie
+        id: get_app_url_staging
+        run: |
+          # désactiver l’arrêt automatique pour gérer l’absence d’output
+          set +e
+          APP_IP=$(terraform output -raw web_server_public_ip)
+          RETCODE=$?
+          set -e
+
+          if [ $RETCODE -ne 0 ] || [ -z "$APP_IP" ]; then
+            echo "# la sortie Terraform n’existe pas ou est vide"
+            echo "app_url=non-disponible" >> $GITHUB_OUTPUT
+            echo "url de l’application (staging) : non-disponible"
+          else
+            echo "app_url=http://${APP_IP}" >> $GITHUB_OUTPUT
+            echo "url de l’application (staging) : http://${APP_IP}"
+          fi
+
+  terraform_apply_production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [terraform_apply_staging] # dépend d’un déploiement réussi sur staging
+    if: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' }}
+    environment:
+      name: production
+      url: ${{ steps.get_app_url_prod.outputs.app_url }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::472910743243:role/GitHubActions-Terraform-Role-Projet1 # !! remplacez par l’ARN de votre rôle !!
+          aws-region: eu-west-3
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.12.1" # spécifiez la version de `Terraform` à utiliser
+      - name: Terraform Init
+        run: terraform init -input=false
+      - name: Select Production Workspace
+        run: terraform workspace select prod || terraform workspace new prod
+      - name: Terraform Plan for Production
+        id: plan_prod
+        run: |
+          terraform plan -input=false -no-color -out=tfplan-prod.binary
+          terraform show -no-color tfplan-prod.binary > tfplan-prod.txt
+          if grep -q "resources to be destroyed" tfplan-prod.txt; then
+            echo "::error title=changements destructeurs détectés en production !::le plan pour production contient des destructions. annulation du déploiement automatique."
+            # exit 1 # décommentez pour faire échouer le `job` si des destructions sont détectées
+          fi
+          echo "plan_file=tfplan-prod.binary" >> $GITHUB_OUTPUT
+      - name: Terraform Apply to Production
+        run: terraform apply -input=false ${{ steps.plan_prod.outputs.plan_file }}
+      - name: récupérer l’IP et formater la sortie (production)
+        id: get_app_url_prod
+        run: |
+          # désactiver l’arrêt automatique pour gérer l’absence d’output
+          set +e
+          APP_IP=$(terraform output -raw web_server_public_ip)
+          RETCODE=$?
+          set -e
+
+          if [ $RETCODE -ne 0 ] || [ -z "$APP_IP" ]; then
+            echo "# la sortie Terraform n’existe pas ou est vide"
+            echo "app_url=non-disponible" >> $GITHUB_OUTPUT
+            echo "url de l’application (production) : non-disponible"
+          else
+            echo "app_url=http://${APP_IP}" >> $GITHUB_OUTPUT
+            echo "url de l’applications (production) : http://${APP_IP}"
+          fi          
