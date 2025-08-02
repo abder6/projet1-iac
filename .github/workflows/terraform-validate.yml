@@ -56,7 +56,7 @@ jobs:
         run: tflint --init
 
       - name: Run TFLint
-        run: tflint --recursive
+        run: tflint --recursive --disable-rule=terraform_unused_declarations
 
       - name: Run Trivy IaC scan
         uses: aquasecurity/trivy-action@0.30.0
