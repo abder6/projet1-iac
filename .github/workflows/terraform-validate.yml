@@ -1,4 +1,4 @@
-name: Terraform Validate, Lint & Scan
+name: Terraform Validate, Lint, Scan & Plan
 
 on:
   push:
@@ -11,9 +11,9 @@ on:
       - staging
 
 permissions:
-  id-token: write # Nécessaire pour l'authentification OIDC AWS
-  contents: read # Nécessaire pour actions/checkout
-  pull-requests: write # Optionnel: pour poster des commentaires sur les PR (vu plus tard)
+  id-token: write # nécessaire pour l’authentification OIDC AWS
+  contents: read # nécessaire pour `actions/checkout`
+  pull-requests: write # nécessaire pour commenter les PR et pour certaines actions de plan
 
 jobs:
   validate-code:
@@ -27,25 +27,17 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::148867357643:role/GitHubActions-Terraform-Role-Projet1 # !!  REMPLACEZ par l'ARN de votre rôle !!
-          aws-region: eu-west-3 # Votre région AWS
+          role-to-assume: arn:aws:iam::472910743243:role/GitHubActions-Terraform-Role-Projet1 # !! remplacez par l’ARN de votre rôle !!
+          aws-region: eu-west-3 # votre région AWS
 
-      # Décommentez et adaptez la section pour OpenTofu si vous l'utilisez
-      # - name: Setup OpenTofu
-      #   uses: opentofu/setup-opentofu@v1
-      #   with:
-      #     tofu_version: '1.7.0' # Spécifiez la version d'OpenTofu
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: "1.12.1" # Spécifiez la version de Terraform que vous souhaitez utiliser
+          terraform_version: "1.12.1" # spécifiez la version de Terraform à utiliser
 
-        # Si vous utilisez OpenTofu, remplacez 'terraform' par 'tofu' dans les commandes ci-dessous
-      - name: Terraform Init (Validation Mode)
-        id: init
+      - name: Terraform Init (validation mode)
+        id: init_validate
         run: terraform init -backend=false -input=false
-        # Pour la validation pure, backend=false est suffisant.
-        # Pour un 'plan' plus tard, nous aurons besoin d'initialiser le backend.
 
       - name: Terraform Format Check
         id: fmt
@@ -55,27 +47,139 @@ jobs:
         id: validate
         run: terraform validate
 
-      # TFLint (Linter)
       - name: Setup TFLint
         uses: terraform-linters/setup-tflint@v4
         with:
-          tflint_version: v0.58.0 # Spécifiez la version de TFLint que vous souhaitez utiliser
+          tflint_version: v0.58.0 # spécifiez la version de TFLint à utiliser
 
       - name: Init TFLint
         run: tflint --init
-        # Assurez-vous d'avoir un fichier .tflint.hcl configuré à la racine de votre projet
-        # avec au moins le plugin AWS activé, comme vu précédemment.
 
       - name: Run TFLint
-        run: tflint --recursive --disable-rule=terraform_unused_declarations
+        run: tflint --recursive
 
-      # Trivy (Security Scan)
       - name: Run Trivy IaC scan
         uses: aquasecurity/trivy-action@0.30.0
         with:
           scan-type: "config"
           input: "."
           format: "table"
-          exit-code: "0" # ne pas échouer le job si des vulnérabilités sont trouvées
+          exit-code: "0"
           severity: "CRITICAL"
           ignore-unfixed: true
+#Jobs 2 -> Terraform Plan
+  terraform_plan: 
+    name: Generate Terraform Plan
+    runs-on: ubuntu-latest
+    needs: validate-code # s’exécute seulement si le job validate-code a réussi
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::148867357643:role/GitHubActions-Terraform-Role-Projet1 # !! remplacez par l’ARN de votre rôle !!
+          aws-region: eu-west-3 # votre région AWS
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.12.1" # spécifiez la version de Terraform à utiliser
+
+      - name: Determine Terraform workspace
+        run: |
+          if [ "${{ github.base_ref }}" = "main" ]; then
+            WORKSPACE=prod
+          elif [ "${{ github.base_ref }}" = "staging" ]; then
+            WORKSPACE=dev
+          else
+            WORKSPACE=dev
+          fi
+          echo "WORKSPACE=$WORKSPACE" >> $GITHUB_ENV
+
+      - name: Terraform Init (for plan)
+        id: init_plan
+        run: terraform init -input=false
+        # ici, nous initialisons le backend car le plan en a besoin pour lire l’état actuel
+
+      - name: Select Terraform workspace
+        run: |
+          echo "Selecting workspace: $WORKSPACE"
+          terraform workspace select $WORKSPACE || terraform workspace new $WORKSPACE
+
+      - name: Terraform Plan
+        id: plan
+        run: |
+          echo "--- Running Terraform Plan ---"
+          # Le code ci-dessous pourra être largement simplifié une fois que la PR #36476 de Terraform sera intégrée.
+          # cf. https://github.com/hashicorp/terraform/issues/36476
+          terraform plan -input=false -no-color -detailed-exitcode > plan.txt
+          PLAN_COMMAND_RAW_EXIT_CODE=$? # Capture du code de sortie brut de terraform plan
+          echo "Terraform Plan command raw exit code: $PLAN_COMMAND_RAW_EXIT_CODE"
+
+          echo "--- Content of plan.txt ---"
+          cat plan.txt
+          echo "--- End of plan.txt ---"
+
+          FINAL_PLAN_DETAILS="Vérification manuelle du plan requise (analyse du contenu ou code de sortie non concluant)." # Valeur par défaut
+
+          if [ "$PLAN_COMMAND_RAW_EXIT_CODE" -eq 1 ]; then
+            # Erreur critique de 'terraform plan' (ex: erreur de syntaxe)
+            FINAL_PLAN_DETAILS="Erreur critique lors de la génération du plan (Terraform a retourné le code: $PLAN_COMMAND_RAW_EXIT_CODE)"
+            echo "Condition: La commande Terraform Plan a directement signalé une erreur."
+          elif grep -q -E "(No changes\. Infrastructure is up-to-date\.|No changes\. Your infrastructure matches the configuration\.|Plan: 0 to add, 0 to change, 0 to destroy\.)" plan.txt; then
+            # Message explicite "No changes" ou résumé à zéro trouvé dans plan.txt
+            FINAL_PLAN_DETAILS="aucun changement détecté (confirmé par l'analyse du contenu du plan)"
+            echo "Condition: Message explicite d'absence de changement trouvé dans plan.txt."
+          # Recherche d'une ligne de résumé indiquant des changements (au moins 1 ajout, modification ou suppression)
+          elif PLAN_SUMMARY_LINE=$(grep -E "^Plan: ([0-9]+ to add, [0-9]+ to change, [0-9]+ to destroy\.)$" plan.txt) && \
+              (echo "$PLAN_SUMMARY_LINE" | grep -q -E "([1-9][0-9]* to add|[1-9][0-9]* to change|[1-9][0-9]* to destroy)") ; then
+            # La ligne de résumé a été trouvée ET elle contient au moins un chiffre > 0 pour add/change/destroy
+            ADD=$(echo "$PLAN_SUMMARY_LINE" | sed -n 's/^Plan: \([0-9]*\) to add,.*/\1/p')
+            CHANGE=$(echo "$PLAN_SUMMARY_LINE" | sed -n 's/^Plan: [0-9]* to add, \([0-9]*\) to change,.*/\1/p')
+            DESTROY=$(echo "$PLAN_SUMMARY_LINE" | sed -n 's/^Plan:.*, \([0-9]*\) to destroy.$/\1/p')
+            FINAL_PLAN_DETAILS="changements détectés (analyse du résumé: $ADD à ajouter, $CHANGE à modifier, $DESTROY à détruire). Voir l'artéfact."
+            echo "Condition: Changements détectés à partir de la ligne de résumé de plan.txt."
+          else
+            # Cas ambigu : pas de message clair "No changes", pas de résumé standard avec des chiffres > 0,
+            # ou format de plan inattendu. Le code de sortie brut peut donner une indication.
+            echo "Warning: Contenu du plan ambigu pour la détection automatisée des changements. Code de sortie brut de TF: $PLAN_COMMAND_RAW_EXIT_CODE."
+            if [ "$PLAN_COMMAND_RAW_EXIT_CODE" -eq 0 ] || [ "$PLAN_COMMAND_RAW_EXIT_CODE" -eq 2 ]; then
+                # Si le code de sortie était 0 ou 2, mais que nous n'avons pas pu analyser le plan, c'est suspect.
+                FINAL_PLAN_DETAILS="Plan généré (code TF: $PLAN_COMMAND_RAW_EXIT_CODE), mais contenu non analysable automatiquement. Vérification manuelle requise."
+            fi
+            # FINAL_PLAN_DETAILS conserve sa valeur par défaut "Vérification manuelle..." si non modifié ci-dessus.
+          fi
+
+          echo "PLAN_DETAILS=${FINAL_PLAN_DETAILS}" >> $GITHUB_OUTPUT
+          echo "Final PLAN_DETAILS set to: ${FINAL_PLAN_DETAILS}"
+
+          if [ "$PLAN_COMMAND_RAW_EXIT_CODE" -eq 1 ]; then
+            exit 1
+          fi
+        continue-on-error: true
+
+      - name: Comment PR with plan output
+        if: success() || failure()
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          body: |
+            ### 📝 Résultat du `terraform plan` pour le workspace `$WORKSPACE`
+
+            ${{ steps.plan.outputs.PLAN_DETAILS }}
+
+            Le plan complet est disponible en tant qu’artefact attaché à ce workflow.
+
+            **Veuillez examiner attentivement le plan avant d’approuver cette PR.**
+
+      - name: Upload Terraform plan artifact
+        if: success() || failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-plan-$WORKSPACE
+          path: plan.txt
+          retention-days: 7 # conserve l’artefact pendant 7 jours
